@@ -4,20 +4,94 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
+
+	"github.com/heldtalex/ray-tracer/camera"
+	"github.com/heldtalex/ray-tracer/sdf"
+	"github.com/heldtalex/ray-tracer/shape"
+	"github.com/heldtalex/ray-tracer/vec"
 )
+
+var (
+	MAX_STEPS        = 1000
+	MAX_DISTANCE     = 1000.0
+	MIN_HIT_DISTANCE = 0.001
+)
+
+func rayMarch(origin, direction vec.Vec3, sphere shape.Sphere) vec.Vec3 {
+	distanceFromOrigin := 0.0
+
+	for i := 0; i < MAX_STEPS; i++ {
+		currentPosition := origin.Add(direction.Scale(distanceFromOrigin))
+
+		sphereDistance := sdf.Sphere(currentPosition, sphere)
+		planeDistance := currentPosition.Y
+
+		closest := math.Min(sphereDistance, planeDistance)
+
+		// Hit Sphere
+		if sphereDistance < planeDistance && sphereDistance < MIN_HIT_DISTANCE {
+			return vec.V3(0, 0, 1)
+		}
+
+		// Hit ground plane
+		if planeDistance < sphereDistance && planeDistance < MIN_HIT_DISTANCE {
+			return vec.V3(1, 0, 1)
+		}
+
+		// No hit
+		if distanceFromOrigin > MAX_DISTANCE {
+			return vec.ZeroV3
+		}
+
+		distanceFromOrigin += closest
+	}
+
+	return vec.ZeroV3
+}
 
 func main() {
 	width := 256
 	height := width
+	aspectRatio := float64(width) / float64(height)
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 
+	cam := camera.New(vec.V3(0, 1, 0), -1, 45)
+
+	sphere := shape.NewSphere(vec.V3(0, 1, -6), 1)
+
 	for x := 0; x <= width; x++ {
 		for y := 0; y <= height; y++ {
-			xor := uint8(x ^ y)
+			// Converting pixels positions from
+			// "raster space": (0, 0) = top left, (width, height) = bottom right to
+			// "camera space": (-1, 1) = top left, (1, -1) = bottom right
 
-			img.Set(x, y, color.RGBA{xor, xor, xor, xor})
+			// Normalize pixels with image dimensions to NDC (Normalized Device Coordinates) space.
+			// Add offset of 0.5 to hit the pixel in the middle
+			ndcX := (float64(x) + 0.5) / float64(width)
+			ndcY := (float64(y) + 0.5) / float64(height)
+
+			// NOTE: NDC coordinate range is [0, 1] but we want to remap
+			// them to "screen space which" is in the range [-1, 1]
+			screenX := (2.0 * ndcX) - 1
+			screenY := 1 - (2.0 * ndcY)
+
+			// Finally take the image aspect ratio and angle of the
+			// cameras FOV (angle to the image plane) so we have coordinates
+			// in camera space
+			cameraX := screenX * cam.AngleToScreen * aspectRatio
+			cameraY := screenY * cam.AngleToScreen
+
+			rayDirection := vec.V3(cameraX, cameraY, cam.LookAt).Unit()
+
+			hitPoint := rayMarch(cam.Position, rayDirection, sphere)
+			r := uint8(255.99 * hitPoint.X)
+			g := uint8(255.99 * hitPoint.Y)
+			b := uint8(255.99 * hitPoint.Z)
+
+			img.Set(x, y, color.RGBA{r, g, b, 255})
 		}
 	}
 
