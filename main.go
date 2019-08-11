@@ -91,13 +91,12 @@ func main() {
 			ndcY := (float64(y) + 0.5) / float64(height)
 
 			// NOTE: NDC coordinate range is [0, 1] but we want to remap
-			// them to "screen space which" is in the range [-1, 1]
+			// them to "screen space" which is in the range [-1, 1]
 			screenX := (2.0 * ndcX) - 1
 			screenY := 1 - (2.0 * ndcY)
 
-			// Finally take the image aspect ratio and angle of the
-			// cameras FOV (angle to the image plane) so we have coordinates
-			// in camera space
+			// Finally take the image aspect ratio and angle of the cameras FOV
+			// (angle to the image plane) so we have coordinates in camera space
 			cameraX := screenX * cam.AngleToScreen * aspectRatio
 			cameraY := screenY * cam.AngleToScreen
 
