@@ -19,6 +19,17 @@ var (
 	MIN_HIT_DISTANCE = 0.001
 )
 
+// sphereSurfaceNormal estimates the surface normal of a Sphere at point p
+func sphereSurfaceNormal(p vec.Vec3, s shape.Sphere) vec.Vec3 {
+	epsilon := 0.001
+
+	gradientX := sdf.Sphere(vec.V3(p.X+epsilon, p.Y, p.Z), s) - sdf.Sphere(vec.V3(p.X-epsilon, p.Y, p.Z), s)
+	gradientY := sdf.Sphere(vec.V3(p.X, p.Y+epsilon, p.Z), s) - sdf.Sphere(vec.V3(p.X, p.Y-epsilon, p.Z), s)
+	gradientZ := sdf.Sphere(vec.V3(p.X, p.Y, p.Z+epsilon), s) - sdf.Sphere(vec.V3(p.X, p.Y, p.Z-epsilon), s)
+
+	return vec.V3(gradientX, gradientY, gradientZ).Unit()
+}
+
 func rayMarch(origin, direction vec.Vec3, sphere shape.Sphere) vec.Vec3 {
 	distanceFromOrigin := 0.0
 
@@ -32,7 +43,8 @@ func rayMarch(origin, direction vec.Vec3, sphere shape.Sphere) vec.Vec3 {
 
 		// Hit Sphere
 		if sphereDistance < planeDistance && sphereDistance < MIN_HIT_DISTANCE {
-			return vec.V3(0, 0, 1)
+			n := sphereSurfaceNormal(currentPosition, sphere)
+			return n.Scale(0.5).Add(vec.V3(0.5, 0.5, 0.5))
 		}
 
 		// Hit ground plane
