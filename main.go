@@ -19,7 +19,18 @@ var (
 	MIN_HIT_DISTANCE = 0.001
 )
 
-func rayMarch(origin, direction vec.Vec3, sphere shape.Sphere) vec.Vec3 {
+// sphereSurfaceNormal estimates the surface normal of a Sphere at point p
+func sphereSurfaceNormal(p vec.Vec3, s shape.Sphere) vec.Vec3 {
+	epsilon := 0.001
+
+	gradientX := sdf.Sphere(vec.V3(p.X+epsilon, p.Y, p.Z), s) - sdf.Sphere(vec.V3(p.X-epsilon, p.Y, p.Z), s)
+	gradientY := sdf.Sphere(vec.V3(p.X, p.Y+epsilon, p.Z), s) - sdf.Sphere(vec.V3(p.X, p.Y-epsilon, p.Z), s)
+	gradientZ := sdf.Sphere(vec.V3(p.X, p.Y, p.Z+epsilon), s) - sdf.Sphere(vec.V3(p.X, p.Y, p.Z-epsilon), s)
+
+	return vec.V3(gradientX, gradientY, gradientZ).Unit()
+}
+
+func rayMarch(origin, direction vec.Vec3, light vec.Vec3, sphere shape.Sphere) vec.Vec3 {
 	distanceFromOrigin := 0.0
 
 	for i := 0; i < MAX_STEPS; i++ {
@@ -32,7 +43,12 @@ func rayMarch(origin, direction vec.Vec3, sphere shape.Sphere) vec.Vec3 {
 
 		// Hit Sphere
 		if sphereDistance < planeDistance && sphereDistance < MIN_HIT_DISTANCE {
-			return vec.V3(0, 0, 1)
+			n := sphereSurfaceNormal(currentPosition, sphere)
+
+			lightDirection := light.Sub(currentPosition).Unit()
+			diffuseIntensity := math.Max(0.0, n.Dot(lightDirection))
+
+			return vec.V3(0, 0, 1).Scale(diffuseIntensity)
 		}
 
 		// Hit ground plane
@@ -61,6 +77,7 @@ func main() {
 	cam := camera.New(vec.V3(0, 1, 0), -1, 45)
 
 	sphere := shape.NewSphere(vec.V3(0, 1, -6), 1)
+	light := vec.V3(-2, 5, -3)
 
 	for x := 0; x <= width; x++ {
 		for y := 0; y <= height; y++ {
@@ -74,19 +91,19 @@ func main() {
 			ndcY := (float64(y) + 0.5) / float64(height)
 
 			// NOTE: NDC coordinate range is [0, 1] but we want to remap
-			// them to "screen space which" is in the range [-1, 1]
+			// them to "screen space" which is in the range [-1, 1]
 			screenX := (2.0 * ndcX) - 1
 			screenY := 1 - (2.0 * ndcY)
 
-			// Finally take the image aspect ratio and angle of the
-			// cameras FOV (angle to the image plane) so we have coordinates
-			// in camera space
+			// Finally take the image aspect ratio and angle of the cameras FOV
+			// (angle to the image plane) so we have coordinates in camera space
 			cameraX := screenX * cam.AngleToScreen * aspectRatio
 			cameraY := screenY * cam.AngleToScreen
 
 			rayDirection := vec.V3(cameraX, cameraY, cam.LookAt).Unit()
 
-			hitPoint := rayMarch(cam.Position, rayDirection, sphere)
+			hitPoint := rayMarch(cam.Position, rayDirection, light, sphere)
+
 			r := uint8(255.99 * hitPoint.X)
 			g := uint8(255.99 * hitPoint.Y)
 			b := uint8(255.99 * hitPoint.Z)
