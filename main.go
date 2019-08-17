@@ -4,11 +4,9 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"math"
 	"os"
 
 	"github.com/heldtalex/ray-tracer/camera"
-	"github.com/heldtalex/ray-tracer/sdf"
 	"github.com/heldtalex/ray-tracer/shape"
 	"github.com/heldtalex/ray-tracer/vec"
 )
@@ -19,52 +17,9 @@ var (
 	MIN_HIT_DISTANCE = 0.001
 )
 
-// sphereSurfaceNormal estimates the surface normal of a Sphere at point p
-func sphereSurfaceNormal(p vec.Vec3, s shape.Sphere) vec.Vec3 {
-	epsilon := 0.001
-
-	gradientX := sdf.Sphere(vec.V3(p.X+epsilon, p.Y, p.Z), s) - sdf.Sphere(vec.V3(p.X-epsilon, p.Y, p.Z), s)
-	gradientY := sdf.Sphere(vec.V3(p.X, p.Y+epsilon, p.Z), s) - sdf.Sphere(vec.V3(p.X, p.Y-epsilon, p.Z), s)
-	gradientZ := sdf.Sphere(vec.V3(p.X, p.Y, p.Z+epsilon), s) - sdf.Sphere(vec.V3(p.X, p.Y, p.Z-epsilon), s)
-
-	return vec.V3(gradientX, gradientY, gradientZ).Unit()
-}
-
-func rayMarch(origin, direction vec.Vec3, light vec.Vec3, sphere shape.Sphere) vec.Vec3 {
-	distanceFromOrigin := 0.0
-
-	for i := 0; i < MAX_STEPS; i++ {
-		currentPosition := origin.Add(direction.Scale(distanceFromOrigin))
-
-		sphereDistance := sdf.Sphere(currentPosition, sphere)
-		planeDistance := currentPosition.Y
-
-		closest := math.Min(sphereDistance, planeDistance)
-
-		// Hit Sphere
-		if sphereDistance < planeDistance && sphereDistance < MIN_HIT_DISTANCE {
-			n := sphereSurfaceNormal(currentPosition, sphere)
-
-			lightDirection := light.Sub(currentPosition).Unit()
-			diffuseIntensity := math.Max(0.0, n.Dot(lightDirection))
-
-			return vec.V3(0, 0, 1).Scale(diffuseIntensity)
-		}
-
-		// Hit ground plane
-		if planeDistance < sphereDistance && planeDistance < MIN_HIT_DISTANCE {
-			return vec.V3(1, 0, 1)
-		}
-
-		// No hit
-		if distanceFromOrigin > MAX_DISTANCE {
-			return vec.ZeroV3
-		}
-
-		distanceFromOrigin += closest
-	}
-
-	return vec.ZeroV3
+type Scene struct {
+	Lights []vec.Vec3
+	Shapes []shape.Shape
 }
 
 func main() {
@@ -76,14 +31,22 @@ func main() {
 
 	cam := camera.New(vec.V3(0, 1, 0), -1, 45)
 
-	sphere := shape.NewSphere(vec.V3(0, 1, -6), 1)
-	light := vec.V3(-2, 5, -3)
+	scene := Scene{
+		Lights: []vec.Vec3{
+			vec.V3(-2, 5, -3),
+		},
+		Shapes: []shape.Shape{
+			shape.NewSphere(vec.V3(0, 1, -6), 1),
+			shape.NewPlane(vec.ZeroV3, vec.V3(0, 1, 0)),
+		},
+	}
 
 	for x := 0; x <= width; x++ {
 		for y := 0; y <= height; y++ {
 			// Converting pixels positions from
 			// "raster space": (0, 0) = top left, (width, height) = bottom right to
 			// "camera space": (-1, 1) = top left, (1, -1) = bottom right
+			// https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/standard-coordinate-systems
 
 			// Normalize pixels with image dimensions to NDC (Normalized Device Coordinates) space.
 			// Add offset of 0.5 to hit the pixel in the middle
@@ -95,14 +58,10 @@ func main() {
 			screenX := (2.0 * ndcX) - 1
 			screenY := 1 - (2.0 * ndcY)
 
-			// Finally take the image aspect ratio and angle of the cameras FOV
-			// (angle to the image plane) so we have coordinates in camera space
-			cameraX := screenX * cam.AngleToScreen * aspectRatio
-			cameraY := screenY * cam.AngleToScreen
+			//Finally, calculate the ray going through screen pixel x and y
+			ray := cam.Ray(screenX, screenY, aspectRatio)
 
-			rayDirection := vec.V3(cameraX, cameraY, cam.LookAt).Unit()
-
-			hitPoint := rayMarch(cam.Position, rayDirection, light, sphere)
+			hitPoint := rayMarch(ray, scene)
 
 			r := uint8(255.99 * hitPoint.X)
 			g := uint8(255.99 * hitPoint.Y)
@@ -119,4 +78,94 @@ func main() {
 	defer f.Close()
 
 	png.Encode(f, img)
+}
+
+func rayMarch(ray camera.Ray, scene Scene) vec.Vec3 {
+	distanceTraveled := 0.0
+
+	for i := 0; i < MAX_STEPS; i++ {
+		currentPosition := ray.At(distanceTraveled)
+
+		closestDistance := closestDistanceFromPointToScene(currentPosition, scene)
+
+		// Nothing is in the path of the ray
+		if closestDistance == MAX_DISTANCE {
+			return vec.ZeroV3
+		}
+
+		// We are close enough to something to call it a hit
+		if closestDistance < MIN_HIT_DISTANCE {
+			return calculateIntersect(currentPosition, scene).Color
+		}
+
+		// No hit, continue marching
+		distanceTraveled += closestDistance
+	}
+
+	return vec.ZeroV3
+}
+
+func closestDistanceFromPointToScene(p vec.Vec3, scene Scene) float64 {
+	closest := MAX_DISTANCE
+
+	for _, s := range scene.Shapes {
+		if distance := s.DistanceToPoint(p); distance < closest {
+			closest = distance
+		}
+	}
+
+	return closest
+}
+
+func calculateIntersect(p vec.Vec3, scene Scene) shape.Hit {
+	closestHit := shape.Hit{
+		Distance: MAX_DISTANCE,
+		Color:    vec.ZeroV3,
+	}
+
+	var closetShape shape.Shape
+
+	for _, s := range scene.Shapes {
+		if hit := s.Hit(p); hit.Distance < closestHit.Distance {
+			closestHit = hit
+			closetShape = s
+		}
+	}
+
+	if closestHit.Distance < MAX_DISTANCE {
+		lightIntensity := 0.0
+
+		epsilon := 0.1
+		for _, l := range scene.Lights {
+			// Calculate the gradient at point p to estimate the surface normal
+			nx := closetShape.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - closestHit.Distance
+			ny := closetShape.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - closestHit.Distance
+			nz := closetShape.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - closestHit.Distance
+
+			surfaceNormal := vec.V3(nx, ny, nz).Unit()
+
+			lightDirection := l.Sub(p).Unit()
+			lightIntensity += surfaceNormal.Dot(lightDirection)
+		}
+
+		clampedLightIntensity := clamp(lightIntensity, 0, 1)
+		closestHit.Color = closestHit.Color.Scale(clampedLightIntensity)
+	}
+
+	return closestHit
+}
+
+// clamp returns x clamped to the range [min, max]
+// If x is less than min, min is returned. If x is more than max, max is returned. Otherwise, x is
+// returned.
+func clamp(x, min, max float64) float64 {
+	if x < min {
+		return min
+	}
+
+	if x > max {
+		return max
+	}
+
+	return x
 }
