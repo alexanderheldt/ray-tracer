@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math/rand"
 	"os"
 
 	"github.com/heldtalex/ray-tracer/camera"
@@ -12,9 +13,10 @@ import (
 )
 
 var (
-	MAX_STEPS        = 1000
-	MAX_DISTANCE     = 1000.0
-	MIN_HIT_DISTANCE = 0.001
+	MAX_STEPS         = 1000
+	MAX_DISTANCE      = 1000.0
+	MIN_HIT_DISTANCE  = 0.001
+	AASamplesPerPixel = 100
 )
 
 type Scene struct {
@@ -41,31 +43,40 @@ func main() {
 		},
 	}
 
-	for x := 0; x <= width; x++ {
-		for y := 0; y <= height; y++ {
-			// Converting pixels positions from
-			// "raster space": (0, 0) = top left, (width, height) = bottom right to
-			// "camera space": (-1, 1) = top left, (1, -1) = bottom right
-			// https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/standard-coordinate-systems
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			// Create a color c that we will blend each pixel sample into to
+			// create antialiasing
+			c := vec.ZeroV3
 
-			// Normalize pixels with image dimensions to NDC (Normalized Device Coordinates) space.
-			// Add offset of 0.5 to hit the pixel in the middle
-			ndcX := (float64(x) + 0.5) / float64(width)
-			ndcY := (float64(y) + 0.5) / float64(height)
+			for s := 0; s < AASamplesPerPixel; s++ {
+				// Converting pixels positions from
+				// "raster space": (0, 0) = top left, (width, height) = bottom right to
+				// "camera space": (-1, 1) = top left, (1, -1) = bottom right
 
-			// NOTE: NDC coordinate range is [0, 1] but we want to remap
-			// them to "screen space" which is in the range [-1, 1]
-			screenX := (2.0 * ndcX) - 1
-			screenY := 1 - (2.0 * ndcY)
+				// Normalize pixels with image dimensions to NDC (Normalized Device Coordinates) space.
+				// Add offset with a random value for the antialiasing
+				ndcX := (float64(x) + rand.Float64()) / float64(width)
+				ndcY := (float64(y) + rand.Float64()) / float64(height)
 
-			//Finally, calculate the ray going through screen pixel x and y
-			ray := cam.Ray(screenX, screenY, aspectRatio)
+				// NOTE: NDC coordinate range is [0, 1] but we want to remap
+				// them to "screen space" which is in the range [-1, 1]
+				screenX := (2.0 * ndcX) - 1
+				screenY := 1 - (2.0 * ndcY)
 
-			hitPoint := rayMarch(ray, scene)
+				//Finally, calculate the ray going through screen pixel x and y
+				ray := cam.Ray(screenX, screenY, aspectRatio)
 
-			r := uint8(255.99 * hitPoint.X)
-			g := uint8(255.99 * hitPoint.Y)
-			b := uint8(255.99 * hitPoint.Z)
+				hitPoint := rayMarch(ray, scene)
+				c = c.Add(hitPoint)
+			}
+
+			// Normalize color
+			c = c.Scale(1 / float64(AASamplesPerPixel))
+
+			r := uint8(255.99 * c.X)
+			g := uint8(255.99 * c.Y)
+			b := uint8(255.99 * c.Z)
 
 			img.Set(x, y, color.RGBA{r, g, b, 255})
 		}
