@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"math/rand"
 	"os"
+	"sync"
 
 	"github.com/heldtalex/ray-tracer/camera"
 	"github.com/heldtalex/ray-tracer/shape"
@@ -49,6 +50,13 @@ func main() {
 			// create antialiasing
 			c := vec.ZeroV3
 
+			// Use a WaitGroup to run multiple gorutines for each pixel to parallelize
+			// calculations
+			wg := &sync.WaitGroup{}
+
+			// Use a mutex to ensure that our color c is calculated correctly
+			m := &sync.Mutex{}
+
 			for s := 0; s < AASamplesPerPixel; s++ {
 				// Converting pixels positions from
 				// "raster space": (0, 0) = top left, (width, height) = bottom right to
@@ -67,9 +75,20 @@ func main() {
 				//Finally, calculate the ray going through screen pixel x and y
 				ray := cam.Ray(screenX, screenY, aspectRatio)
 
-				hitPoint := rayMarch(ray, scene)
-				c = c.Add(hitPoint)
+				wg.Add(1)
+				go func(wg *sync.WaitGroup, m *sync.Mutex) {
+					defer wg.Done()
+
+					hitPoint := rayMarch(ray, scene)
+
+					m.Lock()
+					defer m.Unlock()
+
+					c = c.Add(hitPoint)
+				}(wg, m)
 			}
+
+			wg.Wait()
 
 			// Normalize color
 			c = c.Scale(1 / float64(AASamplesPerPixel))
