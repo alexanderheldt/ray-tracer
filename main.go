@@ -153,12 +153,12 @@ func calculateIntersect(p vec.Vec3, scene Scene) shape.Hit {
 		Color:    vec.ZeroV3,
 	}
 
-	var closetShape shape.Shape
+	var closestShape shape.Shape
 
 	for _, s := range scene.Shapes {
 		if hit := s.Hit(p); hit.Distance < closestHit.Distance {
 			closestHit = hit
-			closetShape = s
+			closestShape = s
 		}
 	}
 
