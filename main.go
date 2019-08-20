@@ -168,9 +168,9 @@ func calculateIntersect(p vec.Vec3, scene Scene) shape.Hit {
 		epsilon := 0.1
 		for _, l := range scene.Lights {
 			// Calculate the gradient at point p to estimate the surface normal
-			nx := closetShape.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - closestHit.Distance
-			ny := closetShape.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - closestHit.Distance
-			nz := closetShape.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - closestHit.Distance
+			nx := closetShape.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(epsilon, 0, 0)))
+			ny := closetShape.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, epsilon, 0)))
+			nz := closetShape.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, 0, epsilon)))
 
 			surfaceNormal := vec.V3(nx, ny, nz).Unit()
 
