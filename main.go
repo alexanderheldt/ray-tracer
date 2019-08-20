@@ -26,8 +26,8 @@ type Scene struct {
 }
 
 func main() {
-	width := 256
-	height := width
+	height := 256
+	width := height * 2
 	aspectRatio := float64(width) / float64(height)
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
