@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -37,6 +38,7 @@ func main() {
 	scene := Scene{
 		Lights: []vec.Vec3{
 			vec.V3(-2, 5, -3),
+			vec.V3(-2, 3, -8),
 		},
 		Shapes: []shape.Shape{
 			shape.NewSphere(vec.V3(0, 1, -6), 1),
@@ -115,7 +117,6 @@ func rayMarch(ray camera.Ray, scene Scene) vec.Vec3 {
 
 	for i := 0; i < MAX_STEPS; i++ {
 		currentPosition := ray.At(distanceTraveled)
-
 		closestDistance := closestDistanceFromPointToScene(currentPosition, scene)
 
 		// Nothing is in the path of the ray
@@ -153,36 +154,87 @@ func calculateIntersect(p vec.Vec3, scene Scene) shape.Hit {
 		Color:    vec.ZeroV3,
 	}
 
-	var closetShape shape.Shape
+	var closestShape shape.Shape
 
 	for _, s := range scene.Shapes {
 		if hit := s.Hit(p); hit.Distance < closestHit.Distance {
 			closestHit = hit
-			closetShape = s
+			closestShape = s
 		}
 	}
 
 	if closestHit.Distance < MAX_DISTANCE {
-		lightIntensity := 0.0
+		n := estimateSurfaceNormal(p, closestShape)
 
-		epsilon := 0.1
+		totalLightIntensity := 0.0
 		for _, l := range scene.Lights {
-			// Calculate the gradient at point p to estimate the surface normal
-			nx := closetShape.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(epsilon, 0, 0)))
-			ny := closetShape.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, epsilon, 0)))
-			nz := closetShape.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, 0, epsilon)))
-
-			surfaceNormal := vec.V3(nx, ny, nz).Unit()
-
 			lightDirection := l.Sub(p).Unit()
-			lightIntensity += surfaceNormal.Dot(lightDirection)
+
+			// Move the origin of the ray slightly in the direction of the
+			// light source. This is to avoid the distance calculation to
+			// not trigger immediatly and think we're hitting the closest
+			// object (`closestShape`)
+			shadowOrigin := p.Add(lightDirection.Scale(0.01))
+
+			// Create the shadow ray...
+			shadowRay := camera.Ray{
+				Origin:    shadowOrigin,
+				Direction: lightDirection,
+			}
+
+			// ... and march it towards the light
+			shadow := calculateShadow(shadowRay, scene)
+
+			lightIntensity := n.Dot(lightDirection) * shadow
+			totalLightIntensity += clamp(lightIntensity, 0, 1)
 		}
 
-		clampedLightIntensity := clamp(lightIntensity, 0, 1)
-		closestHit.Color = closestHit.Color.Scale(clampedLightIntensity)
+		closestHit.Color = closestHit.Color.Scale(clamp(totalLightIntensity, 0, 1))
 	}
 
 	return closestHit
+}
+
+func estimateSurfaceNormal(p vec.Vec3, s shape.Shape) vec.Vec3 {
+	epsilon := 0.1
+
+	// Calculate the gradient at point p to estimate the surface normal
+	nx := s.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - s.DistanceToPoint(p.Sub(vec.V3(epsilon, 0, 0)))
+	ny := s.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - s.DistanceToPoint(p.Sub(vec.V3(0, epsilon, 0)))
+	nz := s.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - s.DistanceToPoint(p.Sub(vec.V3(0, 0, epsilon)))
+
+	return vec.V3(nx, ny, nz).Unit()
+}
+
+func calculateShadow(ray camera.Ray, scene Scene) float64 {
+	// shadow of 0 means total shadow, shadow of 1 means no shadow
+	shadow := 1.0
+
+	// sunSize controls how hard/soft the shadows will be
+	// http://www.iquilezles.org/www/articles/rmshadows/rmshadows.htm
+	sunSize := 8.0
+
+	distanceTraveled := 0.0
+	for i := 0; i < MAX_STEPS; i++ {
+		currentPosition := ray.At(distanceTraveled)
+		closestDistance := closestDistanceFromPointToScene(currentPosition, scene)
+
+		// Something was in the way; the point is in shadow
+		if closestDistance < MIN_HIT_DISTANCE {
+			return 0.0
+		}
+
+		// We didn't hit anything, return how much shadow the
+		// point is in
+		if closestDistance == MAX_DISTANCE {
+			return clamp(shadow, 0.0, 1.0)
+		}
+
+		shadow = math.Min(shadow, (closestDistance*sunSize)/distanceTraveled)
+		distanceTraveled += closestDistance
+	}
+
+	return 1.0
 }
 
 // clamp returns x clamped to the range [min, max]
