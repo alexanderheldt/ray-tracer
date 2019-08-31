@@ -163,28 +163,32 @@ func calculateIntersect(p vec.Vec3, scene Scene) shape.Hit {
 	}
 
 	if closestHit.Distance < MAX_DISTANCE {
+		n := estimateSurfaceNormal(p, closestShape)
+
 		lightIntensity := 0.0
-
-		epsilon := 0.1
 		for _, l := range scene.Lights {
-			// Calculate the gradient at point p to estimate the surface normal
-			nx := closetShape.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(epsilon, 0, 0)))
-			ny := closetShape.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, epsilon, 0)))
-			nz := closetShape.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - closetShape.DistanceToPoint(p.Sub(vec.V3(0, 0, epsilon)))
-
-			surfaceNormal := vec.V3(nx, ny, nz).Unit()
-
 			lightDirection := l.Sub(p).Unit()
-			lightIntensity += surfaceNormal.Dot(lightDirection)
+
+
+			lightIntensity += clamp(n.Dot(lightDirection), 0, 1)
 		}
 
-		clampedLightIntensity := clamp(lightIntensity, 0, 1)
-		closestHit.Color = closestHit.Color.Scale(clampedLightIntensity)
+		closestHit.Color = closestHit.Color.Scale(clamp(lightIntensity, 0, 1))
 	}
 
 	return closestHit
 }
 
+func estimateSurfaceNormal(p vec.Vec3, s shape.Shape) vec.Vec3 {
+	epsilon := 0.1
+
+	// Calculate the gradient at point p to estimate the surface normal
+	nx := s.DistanceToPoint(p.Add(vec.V3(epsilon, 0, 0))) - s.DistanceToPoint(p.Sub(vec.V3(epsilon, 0, 0)))
+	ny := s.DistanceToPoint(p.Add(vec.V3(0, epsilon, 0))) - s.DistanceToPoint(p.Sub(vec.V3(0, epsilon, 0)))
+	nz := s.DistanceToPoint(p.Add(vec.V3(0, 0, epsilon))) - s.DistanceToPoint(p.Sub(vec.V3(0, 0, epsilon)))
+
+	return vec.V3(nx, ny, nz).Unit()
+}
 // clamp returns x clamped to the range [min, max]
 // If x is less than min, min is returned. If x is more than max, max is returned. Otherwise, x is
 // returned.
