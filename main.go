@@ -38,6 +38,7 @@ func main() {
 	scene := Scene{
 		Lights: []vec.Vec3{
 			vec.V3(-2, 5, -3),
+			vec.V3(-2, 3, -8),
 		},
 		Shapes: []shape.Shape{
 			shape.NewSphere(vec.V3(0, 1, -6), 1),
